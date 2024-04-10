@@ -10,7 +10,7 @@ configProfile = "DEFAULT"
 
 def create_signer(config_profile, is_instance_principals, is_delegation_token):
 
-    # if instance principals authentications
+    # Instance principals authentications - for use with OCI Dynamic Groups
     if is_instance_principals:
         try:
             signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
@@ -21,9 +21,7 @@ def create_signer(config_profile, is_instance_principals, is_delegation_token):
             print("Error obtaining instance principals certificate, aborting")
             sys.exit(-1)
 
-    # -----------------------------
-    # Delegation Token
-    # -----------------------------
+    # Delegation Token authentications - for use with OCi Cloud Shell
     elif is_delegation_token:
 
         print ("Using delegation token - should only run in cloud shell")
@@ -55,9 +53,7 @@ def create_signer(config_profile, is_instance_principals, is_delegation_token):
         except Exception:
             raise
 
-    # -----------------------------
-    # config file authentication
-    # -----------------------------
+    # Config file authentications - for use with OCI Config file
     else:
         try:
             config = oci.config.from_file(
@@ -86,8 +82,8 @@ def input_command_line(help=False):
     parser.add_argument('-dt', action='store_true', default=False, dest='is_delegation_token', help='Use Delegation Token for Authentication')
     parser.add_argument("-rg", default="", dest='region', help="Region")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-target_id", default="", dest='targetOCID', help="Target Asset OCID")
-    group.add_argument("-migration_id", default="", dest='migrationPlanOCID', help="Migration Plan OCID")
+    group.add_argument("-targetasset_id", default="", dest='targetOCID', help="Target Asset OCID")
+    group.add_argument("-migrationplan_id", default="", dest='migrationPlanOCID', help="Migration Plan OCID")
     parser.add_argument("-fixip", action='store_true', default=False, dest='fixip', help="Set static IP to existing Static IP")
     cmd = parser.parse_args()
     if help:
@@ -98,6 +94,7 @@ def input_command_line(help=False):
 def clearLine():
     print("\033[A                                                                                                            \033[A")
 
+# Get OCM Target Asset (Part of the OCM Migration Plan)
 def getTarget(region, targetID, signer):
     migrations = oci.cloud_migrations.MigrationClient(config, signer=signer)
     data = migrations.get_target_asset(target_asset_id=targetID).data
@@ -114,6 +111,7 @@ def processTarget(region, targetID, cmd, signer):
         computeNics = source_asset['compute']['nics']
         clearLine()
         print(f"VM: {source_asset['displayName']}")
+        # Get the Target's assigned OCI VCN/Subnet
         try:
             targetSubnetOCID = target.user_spec.create_vnic_details.subnet_id
         except:
@@ -125,6 +123,7 @@ def processTarget(region, targetID, cmd, signer):
         print (f" - Target OCI Subnet: {subnetDetails.display_name} [{subnetDetails.cidr_block}]")
         foundMatch = False
         IPs = ""
+        # Find know IP address of the source VM that matches the OCI VCN/Subnet range
         for nic in computeNics:
             if len(nic['ipAddresses']) > 0:
                 IPs = IPs + nic['ipAddresses'][0] + " "
@@ -133,10 +132,12 @@ def processTarget(region, targetID, cmd, signer):
                     MappedIP = nic['ipAddresses'][0]
                     foundMatch = True
                     break
+            else:
+                print (" - No source IP Address found")
         if not foundMatch:
             print (" - No possible IP match found to target subnet: " + IPs)
 
-        #print (target)
+        # Set the IP address of the target asset
         if cmd.fixip:
             if foundMatch:
                 migration_asset = target.migration_asset
@@ -163,21 +164,25 @@ def processTarget(region, targetID, cmd, signer):
 cmd = input_command_line()
 configProfile = cmd.config_profile if cmd.config_profile else configProfile
 config, signer = create_signer(cmd.config_profile, cmd.is_instance_principals, cmd.is_delegation_token)
-if cmd.region:
+
+if cmd.region:   # Override default region when a specific region is specified as parameter
     config["region"] = cmd.region
 
 identity = oci.identity.IdentityClient(config, signer=signer)
 tenancy = identity.get_tenancy(config['tenancy']).data
-print ("OCM Migration Plan / Target Asset fixed IP tool")
+
+print ("Oracle Cloud Migrations (OCM) - Target Asset fixed IP tool")
 print ("Tenancy: {}".format(tenancy.name))
 
+# Process one individual Target Asset
 if cmd.targetOCID:
     processTarget(config["region"], cmd.targetOCID, cmd, signer)
+
+# Process all Target Assets in one Migration Plan
 elif cmd.migrationPlanOCID:
     migrations = oci.cloud_migrations.MigrationClient(config, signer=signer)
     targets = migrations.list_target_assets(migration_plan_id=cmd.migrationPlanOCID).data.items
     for target in targets:
         processTarget(config["region"], target.id, cmd, signer)
-
 else:
-    print ("Please specify target OCID or Migration Plan OCID")
+    print ("Please specify target asset OCID or Migration Plan OCID")
