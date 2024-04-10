@@ -5,7 +5,7 @@ import argparse
 import os
 import ipaddress
 
-configfile = "~/.oci/config"  # Linux
+configfile = "~/.oci/config"
 configProfile = "DEFAULT"
 
 def create_signer(config_profile, is_instance_principals, is_delegation_token):
