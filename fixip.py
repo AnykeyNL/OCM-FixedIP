@@ -108,7 +108,6 @@ def processTarget(region, targetID, cmd, signer):
     migrations = oci.cloud_migrations.MigrationClient(config, signer=signer)
     network = oci.core.VirtualNetworkClient(config, signer=signer)
     target = migrations.get_target_asset(target_asset_id=targetID).data
-    print (target)
     if target:
         migration_asset = target.migration_asset
         source_asset = migration_asset.source_asset_data
@@ -127,12 +126,13 @@ def processTarget(region, targetID, cmd, signer):
         foundMatch = False
         IPs = ""
         for nic in computeNics:
-            IPs = IPs + nic['ipAddresses'][0] + " "
-            if ipaddress.ip_address(nic['ipAddresses'][0]) in ipaddress.ip_network(subnetDetails.cidr_block):
-                print(" - Possible source IP map: {} - {}".format(nic['networkName'], nic['ipAddresses'][0]))
-                MappedIP = nic['ipAddresses'][0]
-                foundMatch = True
-                break
+            if len(nic['ipAddresses']) > 0:
+                IPs = IPs + nic['ipAddresses'][0] + " "
+                if ipaddress.ip_address(nic['ipAddresses'][0]) in ipaddress.ip_network(subnetDetails.cidr_block):
+                    print(" - Possible source IP map: {} - {}".format(nic['networkName'], nic['ipAddresses'][0]))
+                    MappedIP = nic['ipAddresses'][0]
+                    foundMatch = True
+                    break
         if not foundMatch:
             print (" - No possible IP match found to target subnet: " + IPs)
 
